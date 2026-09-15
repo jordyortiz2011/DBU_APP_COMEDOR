@@ -76,14 +76,19 @@ void main() {
   test('la migración deja las metas por sede, la plantilla y el rechazo',
       () async {
     final d = await AppDb.instance.db; // dispara onUpgrade
-    expect(await d.getVersion(), 3);
+    expect(await d.getVersion(), 4);
 
     final cols = await d.rawQuery('PRAGMA table_info(metas)');
     expect(cols.map((c) => c['name']).toList(), contains('id_sede'));
 
     final colsAtn = await d.rawQuery('PRAGMA table_info(atenciones)');
     final nombres = colsAtn.map((c) => c['name']).toList();
-    expect(nombres, containsAll(['rechazada', 'motivo']));
+    // 'metodo' llegó en la v4: con qué se identificó al comensal.
+    expect(nombres, containsAll(['rechazada', 'motivo', 'metodo']));
+
+    // Y la filial del alumno, que es la que dispara el aviso de otra sede.
+    final colsEst = await d.rawQuery('PRAGMA table_info(estudiantes)');
+    expect(colsEst.map((c) => c['name']).toList(), contains('filial'));
 
     final tablas = await d.rawQuery(
         "SELECT name FROM sqlite_master WHERE type='table' AND name='metas_config'");

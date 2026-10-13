@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../config.dart';
 import '../models.dart';
+import '../services/api.dart';
 import '../services/db.dart';
 import '../services/session.dart';
 import '../services/sync_service.dart';
@@ -38,6 +39,16 @@ class RegistroScreenState extends State<RegistroScreen> {
 
   int _total = 0;
   int _meta = AppConfig.racionesDefecto;
+
+  /// Lo que otros equipos y la web registraron, por 'sede|servicio|fecha'.
+  /// Se fija al pulsar "Total de la sede": servidor menos lo que este equipo ya
+  /// había subido. Lo que se registre después suma por el conteo local, sin
+  /// sincronizar en tiempo real. Junto va la hora de la consulta.
+  final Map<String, ({int ajuste, DateTime hora})> _otros = {};
+  bool _consultandoTotal = false;
+
+  /// Teclado numérico por defecto (DNI/código); letras para buscar por nombre.
+  bool _tecladoNumerico = true;
   String? _menu;
   Widget? _resultado;
   List<Estudiante> _opciones = [];
@@ -117,6 +128,32 @@ class RegistroScreenState extends State<RegistroScreen> {
   }
 
   String get _fechaStr => fechaHoy(_fecha);
+
+  String get _claveConteo => '$_idSede|$_idServicio|$_fechaStr';
+
+  Future<void> _consultarTotal() async {
+    if (_idSede == null || _idServicio == null || _consultandoTotal) return;
+    final clave = _claveConteo;
+    final sede = _idSede!, servicio = _idServicio!, fecha = _fechaStr;
+    setState(() => _consultandoTotal = true);
+    try {
+      final servidor = await Api.instance.conteo(sede, servicio, fecha);
+      // Se lee después de la respuesta: lo que se subió mientras tanto ya
+      // está en el total del servidor y también tiene que restarse.
+      final propias = await AppDb.instance.enviadasDia(sede, servicio, fecha);
+      if (!mounted) return;
+      setState(() =>
+          _otros[clave] = (ajuste: servidor - propias, hora: DateTime.now()));
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(e is ApiException
+              ? 'No se pudo obtener el total: ${e.mensaje}'
+              : 'No se pudo obtener el total: sin conexión con el servidor.')));
+    } finally {
+      if (mounted) setState(() => _consultandoTotal = false);
+    }
+  }
 
   Future<void> _refrescarContador() async {
     if (_idSede == null || _idServicio == null) return;
@@ -543,20 +580,47 @@ class RegistroScreenState extends State<RegistroScreen> {
         ]),
       );
 
-  Widget _contador() => Column(
-        crossAxisAlignment: CrossAxisAlignment.end,
-        children: [
-          Text('$_total / $_meta',
-              style: const TextStyle(
-                  fontSize: 26,
-                  fontWeight: FontWeight.bold,
-                  height: 1,
-                  color: AppColors.contador)),
-          const SizedBox(height: 2),
-          const Text('raciones del servicio (día)',
-              style: TextStyle(color: AppColors.textoSuave, fontSize: 11)),
-        ],
-      );
+  Widget _contador() {
+    final otros = _otros[_claveConteo];
+    // Lo anulado desde la web después de la consulta puede dejar el ajuste
+    // por debajo de cero hasta la próxima; el total nunca se muestra negativo.
+    final total = otros == null ? _total : (_total + otros.ajuste).clamp(0, 1 << 30);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: [
+        Text('$total / $_meta',
+            style: const TextStyle(
+                fontSize: 26,
+                fontWeight: FontWeight.bold,
+                height: 1,
+                color: AppColors.contador)),
+        const SizedBox(height: 2),
+        Text(
+            otros == null
+                ? 'raciones de este equipo (día)'
+                : 'total sede · ${horaActual(otros.hora).substring(0, 5)}',
+            style: const TextStyle(color: AppColors.textoSuave, fontSize: 11)),
+        const SizedBox(height: 4),
+        SizedBox(
+          height: 28,
+          child: OutlinedButton.icon(
+            style: OutlinedButton.styleFrom(
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                visualDensity: VisualDensity.compact,
+                textStyle: const TextStyle(fontSize: 11)),
+            onPressed: _consultandoTotal ? null : _consultarTotal,
+            icon: _consultandoTotal
+                ? const SizedBox(
+                    width: 12,
+                    height: 12,
+                    child: CircularProgressIndicator(strokeWidth: 2))
+                : const Icon(Icons.groups, size: 14),
+            label: const Text('Total de la sede'),
+          ),
+        ),
+      ],
+    );
+  }
 
   Widget _badgeConexion() => ValueListenableBuilder<bool>(
         valueListenable: SyncService.instance.enLinea,
@@ -618,11 +682,30 @@ class RegistroScreenState extends State<RegistroScreen> {
               controller: _doc,
               focusNode: _focus,
               autofocus: true,
+              keyboardType: _tecladoNumerico
+                  ? TextInputType.number
+                  : TextInputType.text,
               textInputAction: TextInputAction.search,
               onSubmitted: (_) => _buscar(auto: true),
               decoration: InputDecoration(
                 hintText: 'Escanea o escribe DNI / código',
-                prefixIcon: const Icon(Icons.badge, color: AppColors.primary),
+                // Alterna el teclado: numérico para DNI/código, letras para
+                // buscar por nombre.
+                prefixIcon: IconButton(
+                  icon: Icon(
+                      _tecladoNumerico ? Icons.abc : Icons.dialpad,
+                      color: AppColors.primary),
+                  tooltip: _tecladoNumerico
+                      ? 'Teclado de letras'
+                      : 'Teclado numérico',
+                  onPressed: () {
+                    setState(() => _tecladoNumerico = !_tecladoNumerico);
+                    // El teclado abierto no cambia de tipo solo: se reabre.
+                    _focus.unfocus();
+                    WidgetsBinding.instance.addPostFrameCallback(
+                        (_) => _focus.requestFocus());
+                  },
+                ),
                 suffixIcon: Row(mainAxisSize: MainAxisSize.min, children: [
                   IconButton(
                       icon: const Icon(Icons.qr_code_scanner,

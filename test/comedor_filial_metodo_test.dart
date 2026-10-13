@@ -88,4 +88,38 @@ void main() {
     expect(esOtra('DATEM DEL MARAÑON'), isTrue);
     expect(esOtra('YURIMAGUAS'), isTrue);
   });
+
+  test('total de la sede: servidor + lo local, sin contar dos veces lo subido',
+      () async {
+    // Sede/fecha propias para no cruzarse con los otros tests del archivo.
+    Atencion a(String uuid, String doc) => Atencion(
+          uuid: uuid,
+          idSede: 9,
+          idServicio: 2,
+          idEstudiante: 0,
+          numDocumento: doc,
+          fechaAtencion: '2026-10-13',
+          fechaHoraRegistro: '2026-10-13T12:00:00.000',
+          origen: 'MOVIL',
+        );
+    final db = AppDb.instance;
+    await db.insertarAtencion(a('t-1', '1')); // subida
+    await db.insertarAtencion(a('t-2', '2')); // subida
+    await db.insertarAtencion(a('t-3', '3')); // en cola
+    await db.insertarAtencion(a('t-4', '4')); // duplicada en el servidor
+    await db.marcarEnviada('t-1');
+    await db.marcarEnviada('t-2');
+    await db.marcarRechazada('t-4', 'dup');
+
+    expect(await db.conteoDia(9, 2, '2026-10-13'), 3);
+    expect(await db.enviadasDia(9, 2, '2026-10-13'), 2);
+
+    // El servidor tiene 10: las 2 de este equipo y 8 del otro celular.
+    final ajuste = 10 - await db.enviadasDia(9, 2, '2026-10-13');
+    expect(await db.conteoDia(9, 2, '2026-10-13') + ajuste, 11); // 10 + 1 en cola
+
+    // Lo que se suba después no cambia el total: ya estaba en el conteo local.
+    await db.marcarEnviada('t-3');
+    expect(await db.conteoDia(9, 2, '2026-10-13') + ajuste, 11);
+  });
 }

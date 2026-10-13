@@ -285,6 +285,18 @@ class AppDb {
     return Sqflite.firstIntValue(r) ?? 0;
   }
 
+  /// Las del día que este equipo ya subió: el total del servidor las incluye,
+  /// así que se restan para no contarlas dos veces al sumar lo local.
+  Future<int> enviadasDia(int idSede, int idServicio, String fecha) async {
+    final d = await db;
+    final r = await d.rawQuery(
+        'SELECT COUNT(*) c FROM atenciones '
+        'WHERE id_sede=? AND id_servicio=? AND fecha_atencion=? '
+        'AND enviado=1 AND rechazada=0',
+        [idSede, idServicio, fecha]);
+    return Sqflite.firstIntValue(r) ?? 0;
+  }
+
   Future<List<Atencion>> pendientes() async {
     final d = await db;
     final rows = await d.query('atenciones',

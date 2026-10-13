@@ -75,6 +75,24 @@ class Api {
     return ((body['resultados'] as List?) ?? []).cast<Map<String, dynamic>>();
   }
 
+  /// Raciones que el servidor tiene para ese día, sede y servicio, sumando
+  /// todos los equipos y la web. Se pide a mano desde el contador.
+  Future<int> conteo(int idSede, int idServicio, String fecha) async {
+    final res = await http
+        .get(
+            _uri('api/comedor/conteo?id_sede=$idSede'
+                '&id_servicio=$idServicio&fecha=$fecha'),
+            headers: _headers(auth: true))
+        .timeout(AppConfig.syncTimeout);
+    if (res.statusCode == 401) throw ApiException('Sesión expirada.', 401);
+    final body = _json(res);
+    if (res.statusCode != 200 || body['ok'] != true) {
+      throw ApiException(
+          body['mensaje'] ?? 'No se pudo obtener el total.', res.statusCode);
+    }
+    return (body['total'] as num).toInt();
+  }
+
   Future<void> logout() async {
     try {
       await http

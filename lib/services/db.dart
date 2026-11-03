@@ -110,6 +110,16 @@ class AppDb {
     return Sqflite.firstIntValue(r) ?? 0;
   }
 
+  /// ¿Hay padrón pero ningún estudiante con filial? Pasa en un equipo que se
+  /// actualizó desde una versión sin esa columna: la migración la agrega vacía y
+  /// sin filial no se puede avisar de un comensal de otra sede.
+  Future<bool> padronSinFilial() async {
+    final d = await db;
+    final r = await d.rawQuery(
+        'SELECT COUNT(*) total, COUNT(filial) con_filial FROM estudiantes');
+    return (r.first['total'] as int) > 0 && (r.first['con_filial'] as int) == 0;
+  }
+
   /// Busca por DNI/código (prefijo) o nombre (subcadena). tipo: ambos|dni|codigo.
   Future<List<Estudiante>> buscarEstudiantes(String q, String tipo) async {
     final d = await db;

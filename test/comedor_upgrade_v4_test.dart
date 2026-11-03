@@ -72,6 +72,10 @@ void main() {
     expect(pend.single.metodo, isNull); // no se puede deducir lo viejo
   });
 
+  test('tras el upgrade el padrón viejo se detecta como sin filial', () async {
+    expect(await AppDb.instance.padronSinFilial(), isTrue);
+  });
+
   test('después del upgrade se puede guardar filial y método', () async {
     await AppDb.instance.insertarAtencion(Atencion(
       uuid: 'uuid-v4',
@@ -94,5 +98,10 @@ void main() {
     ]);
     final r = await AppDb.instance.buscarEstudiantes('70000001', 'dni');
     expect(r.single.filial, 'REQUENA');
+    expect(await AppDb.instance.padronSinFilial(), isFalse);
+
+    // Sin padrón no aplica: esa pantalla ya pide descargar los datos.
+    await AppDb.instance.reemplazarEstudiantes([]);
+    expect(await AppDb.instance.padronSinFilial(), isFalse);
   });
 }

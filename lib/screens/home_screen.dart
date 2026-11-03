@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../config.dart';
 import '../services/api.dart';
+import '../services/db.dart';
 import '../services/session.dart';
 import '../services/sync_service.dart';
 import 'config_screen.dart';
@@ -27,6 +28,36 @@ class _HomeScreenState extends State<HomeScreen> {
     ListadoScreen(key: _listadoKey),
     ConfigScreen(key: _configKey),
   ];
+
+  bool _completandoPadron = false;
+
+  @override
+  void initState() {
+    super.initState();
+    SyncService.instance.enLinea.addListener(_completarPadron);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _completarPadron());
+  }
+
+  @override
+  void dispose() {
+    SyncService.instance.enLinea.removeListener(_completarPadron);
+    super.dispose();
+  }
+
+  /// Un padrón sin filial deja mudo el aviso de otra filial, sin ningún síntoma
+  /// para el operador. Se descarga solo apenas haya conexión, sin esperar a que
+  /// alguien pulse "Actualizar datos".
+  Future<void> _completarPadron() async {
+    if (_completandoPadron || !SyncService.instance.enLinea.value) return;
+    _completandoPadron = true;
+    try {
+      if (await AppDb.instance.padronSinFilial() && mounted) {
+        await _actualizarDatos();
+      }
+    } finally {
+      _completandoPadron = false;
+    }
+  }
 
   Future<void> _actualizarDatos() async {
     showDialog(
